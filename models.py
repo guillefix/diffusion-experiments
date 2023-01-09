@@ -83,6 +83,10 @@ class LabelEmbedder(nn.Module):
             drop_ids = torch.rand(labels.shape[0]) < self.dropout_prob
         else:
             drop_ids = force_drop_ids == 1
+        drop_ids = drop_ids.to(labels.device)
+        # print(drop_ids.device)
+        # print(labels.device)
+        # print(self.num_classes)
         labels = torch.where(drop_ids, self.num_classes, labels)
         return labels
 
@@ -151,8 +155,10 @@ class DiT(nn.Module):
         input_size=32,
         patch_size=2,
         in_channels=4,
-        hidden_size=1152,
-        depth=28,
+        # hidden_size=1152,
+        hidden_size=152,
+        # depth=28,
+        depth=6,
         num_heads=16,
         mlp_ratio=4.0,
         class_dropout_prob=0.1,
@@ -355,3 +361,97 @@ def DiT_S_4(**kwargs):
 
 def DiT_S_8(**kwargs):
     return DiT(depth=12, hidden_size=384, patch_size=8, num_heads=6, **kwargs)
+
+
+####################
+### PYTORCH LIGHTNING Model
+####################
+
+
+from diffusion.gaussian_diffusion import GaussianDiffusion
+from torch.nn import functional as F
+from torch.utils.data import DataLoader
+from torch.utils.data import random_split
+from torchvision.datasets import MNIST
+from torchvision import transforms
+import pytorch_lightning as pl
+
+def get_beta_schedule(beta_schedule, *, beta_start, beta_end, num_diffusion_timesteps):
+    if beta_schedule == 'quad':
+        betas = np.linspace(beta_start ** 0.5, beta_end ** 0.5, num_diffusion_timesteps, dtype=np.float64) ** 2
+    elif beta_schedule == 'linear':
+        betas = np.linspace(beta_start, beta_end, num_diffusion_timesteps, dtype=np.float64)
+    elif beta_schedule == 'warmup10':
+        betas = _warmup_beta(beta_start, beta_end, num_diffusion_timesteps, 0.1)
+    elif beta_schedule == 'warmup50':
+        betas = _warmup_beta(beta_start, beta_end, num_diffusion_timesteps, 0.5)
+    elif beta_schedule == 'const':
+        betas = beta_end * np.ones(num_diffusion_timesteps, dtype=np.float64)
+    elif beta_schedule == 'jsd':  # 1/T, 1/(T-1), 1/(T-2), ..., 1
+        betas = 1. / np.linspace(num_diffusion_timesteps, 1, num_diffusion_timesteps, dtype=np.float64)
+    else:
+        raise NotImplementedError(beta_schedule)
+    assert betas.shape == (num_diffusion_timesteps,)
+    return betas
+
+
+from diffusion.gaussian_diffusion import LossType, ModelMeanType, ModelVarType
+kwargs = {}
+kwargs['beta_schedule'] = 'linear'
+kwargs['beta_start'] = 0.0001
+kwargs['beta_end'] = 0.02
+N = 1000
+kwargs['num_diffusion_timesteps'] = N
+kwargs['model_mean_type'] = ModelMeanType.EPSILON
+kwargs['model_var_type'] = ModelVarType.LEARNED
+kwargs['loss_type'] = LossType.MSE
+
+class DiTLN(pl.LightningModule):
+    def __init__(self, latent_size=None):
+        super().__init__()
+        # device = "cuda" if torch.cuda.is_available() else "cpu"
+        # self.model = DiT_XL_2(input_size=latent_size, learn_sigma=(kwargs['model_var_type'] in [ModelVarType.LEARNED, ModelVarType.LEARNED_RANGE]))
+        self.model = DiT_S_2(input_size=latent_size, learn_sigma=(kwargs['model_var_type'] in [ModelVarType.LEARNED, ModelVarType.LEARNED_RANGE]))
+        self.gd = GaussianDiffusion(
+            betas=get_beta_schedule(
+                kwargs['beta_schedule'], beta_start=kwargs['beta_start'], beta_end=kwargs['beta_end'],
+                num_diffusion_timesteps=kwargs['num_diffusion_timesteps']
+            ),
+            model_mean_type=kwargs['model_mean_type'],
+            model_var_type=kwargs['model_var_type'],
+            loss_type=kwargs['loss_type'],
+        )
+
+    def forward(self, x, t=0, y=None):
+        # print("AAAAAA")
+        if y is None:
+            # y = torch.randint(0,10,(x.size(0),1))
+            y = torch.randint(0,10,(x.size(0),))
+        return self.model(x, t, y)
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-3)
+        # optimizer = torch.optim.SGD(self.model.parameters(), lr=1e-3)
+        return optimizer
+
+    def training_step(self, train_batch, batch_idx):
+        x, y = train_batch
+        t = torch.randint(0,N,(x.size(0),)).to(x.device)
+        # y = torch.zeros(x.size(0),1)
+        # x = x.view(x.size(0), -1)
+        losses = self.gd.training_losses(self.model, x, t, model_kwargs={'y':y})
+        loss = torch.sum(losses["loss"])
+        self.log('train_loss', loss)
+        return loss
+
+    def validation_step(self, val_batch, batch_idx):
+        x, y = val_batch
+        # print(y.shape)
+        # optimizer.zero_grad()
+        # scheduler.zero_grad()
+        with torch.no_grad():
+            t = torch.randint(0,N,(x.size(0),)).to(x.device)
+            losses = self.gd.training_losses(self.model, x, t, model_kwargs={'y':y})
+            loss = losses["loss"]
+            loss = torch.sum(losses["loss"])
+            self.log('val_loss', loss)
