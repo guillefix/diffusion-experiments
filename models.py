@@ -429,6 +429,13 @@ class DiTLN(pl.LightningModule):
             y = torch.randint(0,10,(x.size(0),))
         return self.model(x, t, y)
 
+    def forward_with_cfg(self, x, t=0, y=None, cfg_scale=1.0):
+        # print("AAAAAA")
+        if y is None:
+            # y = torch.randint(0,10,(x.size(0),1))
+            y = torch.randint(0,10,(x.size(0),))
+        return self.model.forward_with_cfg(x, t, y, cfg_scale)
+
     def configure_optimizers(self):
         optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-3)
         # optimizer = torch.optim.SGD(self.model.parameters(), lr=1e-3)

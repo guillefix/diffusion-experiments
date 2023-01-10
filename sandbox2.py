@@ -14,8 +14,8 @@ from models import DiTLN
 dataset = MNIST('', train=True, download=True, transform=transforms.Compose([transforms.ToTensor(), transforms.Lambda(lambda x: torch.tile(x,(4,1,1)))]))
 mnist_train, mnist_val = random_split(dataset, [55000, 5000])
 
-train_loader = DataLoader(mnist_train, batch_size=1)
-val_loader = DataLoader(mnist_val, batch_size=1)
+train_loader = DataLoader(mnist_train, batch_size=64)
+val_loader = DataLoader(mnist_val, batch_size=64)
 
 # next(iter(train_loader))[0].shape
 
@@ -28,5 +28,5 @@ latent_size = image_size
 model = DiTLN(latent_size=latent_size)
 
 # training
-trainer = pl.Trainer(accelerator='gpu', devices=1)
+trainer = pl.Trainer(accelerator='gpu', devices=1, max_epochs=10)
 trainer.fit(model, train_loader, val_loader)
