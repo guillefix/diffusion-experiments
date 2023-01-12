@@ -17,8 +17,10 @@ torch.manual_seed(0)
 torch.set_grad_enabled(False)
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print("Using device "+device)
-num_sampling_steps = 250
+num_sampling_steps = 500
+# cfg_scale = 4.0
 cfg_scale = 4.0
+# cfg_scale = 10.0
 
 torch.__version__
 
@@ -35,7 +37,7 @@ image_size = 28
 # assert image_size in [256, 512], "We only provide pre-trained models for 256x256 and 512x512 resolutions."
 # latent_size = image_size // 8
 latent_size = image_size
-model = DiTLN.load_from_checkpoint("lightning_logs/version_0/checkpoints/epoch=0-step=860.ckpt", latent_size=latent_size)
+model = DiTLN.load_from_checkpoint("lightning_logs/version_6/checkpoints/epoch=49-step=43000.ckpt", latent_size=latent_size)
 model.eval()
 model.to(device)
 diffusion = create_diffusion(str(num_sampling_steps))

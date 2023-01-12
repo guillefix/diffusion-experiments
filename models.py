@@ -411,7 +411,8 @@ class DiTLN(pl.LightningModule):
         super().__init__()
         # device = "cuda" if torch.cuda.is_available() else "cpu"
         # self.model = DiT_XL_2(input_size=latent_size, learn_sigma=(kwargs['model_var_type'] in [ModelVarType.LEARNED, ModelVarType.LEARNED_RANGE]))
-        self.model = DiT_S_2(input_size=latent_size, learn_sigma=(kwargs['model_var_type'] in [ModelVarType.LEARNED, ModelVarType.LEARNED_RANGE]))
+        # self.model = DiT_S_2(input_size=latent_size, learn_sigma=(kwargs['model_var_type'] in [ModelVarType.LEARNED, ModelVarType.LEARNED_RANGE]))
+        self.model = DiT(depth=12, hidden_size=768, patch_size=2, num_heads=12, input_size=latent_size, learn_sigma=(kwargs['model_var_type'] in [ModelVarType.LEARNED, ModelVarType.LEARNED_RANGE])) 
         self.gd = GaussianDiffusion(
             betas=get_beta_schedule(
                 kwargs['beta_schedule'], beta_start=kwargs['beta_start'], beta_end=kwargs['beta_end'],
@@ -437,12 +438,13 @@ class DiTLN(pl.LightningModule):
         return self.model.forward_with_cfg(x, t, y, cfg_scale)
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-3)
+        optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-4)
         # optimizer = torch.optim.SGD(self.model.parameters(), lr=1e-3)
         return optimizer
 
-    def training_step(self, train_batch, batch_idx):
+    def training_step(self, train_batch, batch_idx, p_noncond=0.5):
         x, y = train_batch
+        y[torch.nonzero(torch.rand(y.shape)<p_noncond)] = 1000
         t = torch.randint(0,N,(x.size(0),)).to(x.device)
         # y = torch.zeros(x.size(0),1)
         # x = x.view(x.size(0), -1)
